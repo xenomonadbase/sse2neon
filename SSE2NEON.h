@@ -111,8 +111,13 @@
 #if defined(__GNUC__) || defined(__clang__)
 #	pragma push_macro("FORCE_INLINE")
 #	pragma push_macro("ALIGN_STRUCT")
+#ifdef FORCE_INLINE
+#undef FORCE_INLINE
+#endif
 #	define FORCE_INLINE       static inline __attribute__((always_inline))
+#ifndef ALIGN_STRUCT
 #	define ALIGN_STRUCT(x)    __attribute__((aligned(x)))
+#endif
 #else
 #	error "Macro name collisions may happens with unknown compiler"
 #	define FORCE_INLINE       static inline
@@ -344,10 +349,20 @@ FORCE_INLINE __m128 _mm_setr_ps(float w, float z , float y , float x )
 	return vreinterpretq_m128_f32(vld1q_f32(data));
 }
 
+// Sets the 4 signed 16-bit integer values to i. https://msdn.microsoft.com/en-us/library/vstudio/h4xscxat(v=vs.100).aspx
+FORCE_INLINE __m128i _mm_set1_epi16(short _i)
+{
+	return vreinterpretq_m128i_s16(vdupq_n_s16(_i));
+}
 // Sets the 4 signed 32-bit integer values to i. https://msdn.microsoft.com/en-us/library/vstudio/h4xscxat(v=vs.100).aspx
 FORCE_INLINE __m128i _mm_set1_epi32(int _i)
 {
 	return vreinterpretq_m128i_s32(vdupq_n_s32(_i));
+}
+// Sets the 4 signed 64-bit integer values to i. https://msdn.microsoft.com/en-us/library/vstudio/h4xscxat(v=vs.100).aspx
+FORCE_INLINE __m128i _mm_set1_epi64(int64_t _i)
+{
+	return vreinterpretq_m128i_s64(vdupq_n_s64(_i));
 }
 
 // Sets the 4 signed 32-bit integer values. https://msdn.microsoft.com/en-us/library/vstudio/019beekt(v=vs.100).aspx
@@ -368,6 +383,13 @@ FORCE_INLINE void _mm_storeu_ps(float *p, __m128 a)
 {
 	vst1q_f32(p, vreinterpretq_f32_m128(a));
 }
+
+// Stores four 32-bit integer values as (as a __m128 value) at the address p. https://msdn.microsoft.com/en-us/library/vstudio/edk11s13(v=vs.100).aspx
+FORCE_INLINE void _mm_storeu_si128(__m128 *p, __m128i a)
+{
+	vst1q_u32((uint32_t*) p, vreinterpretq_u32_m128i(a));
+}
+
 
 // Stores four 32-bit integer values as (as a __m128i value) at the address p. https://msdn.microsoft.com/en-us/library/vstudio/edk11s13(v=vs.100).aspx
 FORCE_INLINE void _mm_store_si128(__m128i *p, __m128i a)
@@ -472,6 +494,26 @@ FORCE_INLINE __m128i _mm_xor_si128(__m128i a, __m128i b)
 {
 	return vreinterpretq_m128i_s32( veorq_s32(vreinterpretq_s32_m128i(a), vreinterpretq_s32_m128i(b)) );
 }
+
+/* Moves the upper two values of B into the lower two values of A.  */
+FORCE_INLINE __m128
+_mm_movehl_ps (__m128 __A, __m128 __B)
+{
+	float32x2_t a32 = vget_high_f32(vreinterpretq_f32_m128(__A));
+	float32x2_t b32 = vget_high_f32(vreinterpretq_f32_m128(__B));
+	return vreinterpretq_m128_f32(vcombine_f32(a32, b32));
+}
+
+/* Moves the lower two values of B into the upper two values of A.  */
+FORCE_INLINE __m128
+_mm_movelh_ps (__m128 __A, __m128 __B)
+{
+	float32x2_t a10 = vget_low_f32(vreinterpretq_f32_m128(__A));
+	float32x2_t b10 = vget_low_f32(vreinterpretq_f32_m128(__B));
+	return vreinterpretq_m128_f32(vcombine_f32(a10, b10));
+}
+
+
 
 // NEON does not provide this method
 // Creates a 4-bit mask from the most significant bits of the four single-precision, floating-point values. https://msdn.microsoft.com/en-us/library/vstudio/4490ys29(v=vs.100).aspx
@@ -810,6 +852,27 @@ FORCE_INLINE __m128i _mm_shuffle_epi32_default(__m128i a, __constrange(0,255) in
 
 // Shuffles the upper 4 signed or unsigned 16 - bit integers in a as specified by imm.  https://msdn.microsoft.com/en-us/library/13ywktbs(v=vs.100).aspx
 //FORCE_INLINE __m128i _mm_shufflehi_epi16_function(__m128i a, __constrange(0,255) int imm)
+#define _mm_shufflelo_epi16_function(a, imm) \
+({ \
+	int16x8_t ret = vreinterpretq_s16_s32(a); \
+	int16x4_t lowBits = vget_low_s16(ret); \
+	ret = vsetq_lane_s16(vget_lane_s16(lowBits, (imm) & 0x3), ret, 4); \
+	ret = vsetq_lane_s16(vget_lane_s16(lowBits, ((imm) >> 2) & 0x3), ret, 5); \
+	ret = vsetq_lane_s16(vget_lane_s16(lowBits, ((imm) >> 4) & 0x3), ret, 6); \
+	ret = vsetq_lane_s16(vget_lane_s16(lowBits, ((imm) >> 6) & 0x3), ret, 7); \
+	vreinterpretq_s32_s16(ret); \
+})
+
+//FORCE_INLINE __m128i _mm_shufflehi_epi16(__m128i a, __constrange(0,255) int imm)
+#define _mm_shufflelo_epi16(a, imm) \
+	_mm_shufflehi_epi16_function((a), (imm))
+
+
+
+
+
+// Shuffles the upper 4 signed or unsigned 16 - bit integers in a as specified by imm.  https://msdn.microsoft.com/en-us/library/13ywktbs(v=vs.100).aspx
+//FORCE_INLINE __m128i _mm_shufflehi_epi16_function(__m128i a, __constrange(0,255) int imm)
 #define _mm_shufflehi_epi16_function(a, imm) \
 ({ \
 	int16x8_t ret = vreinterpretq_s16_s32(a); \
@@ -860,6 +923,28 @@ FORCE_INLINE __m128i _mm_shuffle_epi32_default(__m128i a, __constrange(0,255) in
 	ret; \
 })
 
+
+// Shifts the 4 signed 32 - bit integers in a right by count bits while shifting in the sign bit.  https://msdn.microsoft.com/en-us/library/z1939387(v=vs.100).aspx
+//FORCE_INLINE __m128i _mm_srai_epi32(__m128i a, __constrange(0,255) int imm)
+#define _mm_srai_epi64(a, imm) \
+({ \
+	__m128i ret; \
+	if ((imm) <= 0) { \
+		ret = a; \
+	} \
+	else if ((imm) > 63) { \
+		ret = vreinterpretq_m128i_s64(vshrq_n_s64(vreinterpretq_s64_m128i(a), 32)); \
+		ret = vreinterpretq_m128i_s64(vshrq_n_s64(vreinterpretq_s64_m128i(ret), 32)); \
+	} \
+	else { \
+		ret = vreinterpretq_m128i_s64(vshrq_n_s64(vreinterpretq_s64_m128i(a), (imm))); \
+	} \
+	ret; \
+})
+
+
+
+
 // Shifts the 4 signed 32 - bit integers in a right by count bits while shifting in the sign bit.  https://msdn.microsoft.com/en-us/library/z1939387(v=vs.100).aspx
 //FORCE_INLINE __m128i _mm_srai_epi32(__m128i a, __constrange(0,255) int imm)
 #define _mm_srai_epi32(a, imm) \
@@ -877,6 +962,22 @@ FORCE_INLINE __m128i _mm_shuffle_epi32_default(__m128i a, __constrange(0,255) in
 	} \
 	ret; \
 })
+
+// Shifts the 4 signed 16 - bit integers in a right by count bits while shifting in the sign bit.  https://msdn.microsoft.com/en-us/library/z1939387(v=vs.100).aspx
+//FORCE_INLINE __m128i _mm_srai_epi32(__m128i a, __constrange(0,255) int imm)
+#define _mm_srai_epi16(a, imm) \
+({ \
+	__m128i ret; \
+	if ((imm) <= 0) { \
+		ret = a; \
+	} \
+	else { \
+		ret = vreinterpretq_m128i_s16(vshrq_n_s16(vreinterpretq_s16_m128i(a), (imm))); \
+	} \
+	ret; \
+})
+
+
 
 // Shifts the 128 - bit value in a right by imm bytes while shifting in zeros.imm must be an immediate. https://msdn.microsoft.com/en-us/library/305w28yz(v=vs.100).aspx
 //FORCE_INLINE _mm_srli_si128(__m128i a, __constrange(0,255) int imm)
@@ -978,6 +1079,13 @@ FORCE_INLINE __m128 _mm_add_ss(__m128 a, __m128 b)
 	//the upper values in the result must be the remnants of <a>.
 	return vreinterpretq_m128_f32(vaddq_f32(a, value));
 }
+
+// Adds the 4 signed or unsigned 64-bit integers in a to the 4 signed or unsigned 32-bit integers in b. https://msdn.microsoft.com/en-us/library/vstudio/09xs4fkk(v=vs.100).aspx
+FORCE_INLINE __m128i _mm_add_epi64(__m128i a, __m128i b)
+{
+	return vreinterpretq_m128i_s64(vaddq_s64(vreinterpretq_s64_m128i(a), vreinterpretq_s64_m128i(b)));
+}
+
 
 // Adds the 4 signed or unsigned 32-bit integers in a to the 4 signed or unsigned 32-bit integers in b. https://msdn.microsoft.com/en-us/library/vstudio/09xs4fkk(v=vs.100).aspx
 FORCE_INLINE __m128i _mm_add_epi32(__m128i a, __m128i b)
@@ -1486,6 +1594,7 @@ FORCE_INLINE void _mm_stream_si128(__m128i *p, __m128i a)
 // Cache line containing p is flushed and invalidated from all caches in the coherency domain. : https://msdn.microsoft.com/en-us/library/ba08y07y(v=vs.100).aspx
 FORCE_INLINE void _mm_clflush(void const*p) 
 {
+	UNUSED_PARAMETER(p);
 	// no corollary for Neon?
 }
 
